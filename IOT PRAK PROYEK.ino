@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <ESP32Servo.h>
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -12,6 +13,8 @@
 
 #define RST_PIN         22           // Configurable, see typical pin layout above
 #define SS_PIN          21           // Configurable, see typical pin layout above
+#define BUZZER_PIN      2            // Pin untuk buzzer
+#define SERVO_PIN       4            // Pin untuk buzzer
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -20,12 +23,16 @@ String UID;
 
 DynamicJsonDocument doc(1024);
 
+Servo servo1;
+
 TaskHandle_t httpTask;
 TaskHandle_t rfidTask;
 TaskHandle_t keypadTask;
 
 const char ssid[] = "Studio Room";
 const char password[] = "johncena12";
+
+// Sertifikat SSL
 const char *server_cert = R"(-----BEGIN CERTIFICATE-----
 MIIEdTCCA12gAwIBAgIJAKcOSkw0grd/MA0GCSqGSIb3DQEBCwUAMGgxCzAJBgNV
 BAYTAlVTMSUwIwYDVQQKExxTdGFyZmllbGQgVGVjaG5vbG9naWVzLCBJbmMuMTIw
@@ -104,6 +111,24 @@ bNDgNSkEzdjLpG0TQaocVAfXqd5ZCs3wPh/KtjQJzc8Pn3Cilif3dhxSahquAtCz
 fAf7reVO5lc7EqoYUK380J/A
 -----END PRIVATE KEY-----)";
 
+void buzzerBeep(int pattern) {
+    if (pattern == 1) { // Irama 1 untuk kartu terdaftar
+        for (int i = 0; i < 4; i++) { 
+            digitalWrite(BUZZER_PIN, HIGH);
+            delay(100);
+            digitalWrite(BUZZER_PIN, LOW);
+            delay(150);
+        }
+    } else if (pattern == 2) { // Irama 2 untuk kartu tidak terdaftar
+        for (int i = 0; i < 2; i++) {
+            digitalWrite(BUZZER_PIN, HIGH);
+            delay(300);
+            digitalWrite(BUZZER_PIN, LOW);
+            delay(200);
+        }
+    }
+}
+
 void keypadHandle(void *parameter) {
     for (;;) {
       Serial.println("WOI BAH");
@@ -120,7 +145,7 @@ void httpHandle(void *parameter) {
             client->setPrivateKey(client_key);
 
             HTTPClient https;
-            if (https.begin(*client, "https://mocki.io/v1/5457c715-f196-4607-996e-f5f842e41cd6")) {
+            if (https.begin(*client, "https://mocki.io/v1/84130b2e-0aee-4572-9674-360cc7f0f700")) {
                 int httpCode = https.GET();
 
                 if (httpCode > 0) {
@@ -155,6 +180,14 @@ void rfidHandle(void *parameter) {
 
         Serial.println(F("**CARD DETECTED**"));
 
+        // Bunyikan buzzer selama 500 ms
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(500);
+        digitalWrite(BUZZER_PIN, LOW);
+
+        // Delay tambahan sebelum pengecekan UID
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+
         UID = "";
         for (byte i = 0; i < mfrc522.uid.size; i++) {
             UID += (mfrc522.uid.uidByte[i] < 0x10 ? "0" : "") +
@@ -165,50 +198,70 @@ void rfidHandle(void *parameter) {
         Serial.println(UID);
         mfrc522.PICC_HaltA();
 
+        bool found = false;
         // Mencari nama berdasarkan UID dari JSON
         for (JsonObject obj : doc.as<JsonArray>()) {
             const char *nama = obj["nama"];
             const char *uid = obj["uid"];
 
             if (strcmp(UID.c_str(), uid) == 0) {
+                found = true;
+
                 Serial.printf("Welcome to Office %s !!!\n", nama);
                 Serial.println("PIN : ");
 
                 // Menampilkan pesan di LCD
                 lcd.clear();
-                lcd.setCursor(0, 0); // Line 1
+                lcd.setCursor(0, 0);
                 lcd.print("Welcome !!!");
-                lcd.setCursor(0, 1); // Line 2
+                lcd.setCursor(0, 1);
                 lcd.print(nama);
 
-                // Delay 3 detik
-                vTaskDelay(3000 / portTICK_PERIOD_MS);
+                servo1.write(90);
+                // Bunyikan buzzer (kartu terdaftar)
+                buzzerBeep(1);
 
-                // Membersihkan LCD dan menampilkan "PIN :"
+                vTaskDelay(3000 / portTICK_PERIOD_MS);
+                servo1.write(180);
+
                 lcd.clear();
-                lcd.setCursor(0, 0); // Line 1
+                lcd.setCursor(0, 0);
                 lcd.print("PIN :");
                 xTaskCreate(keypadHandle, "Keypad Task", 4096, NULL, 1, &keypadTask);
-                break; // Keluar dari loop setelah menemukan UID yang cocok
+                break;
             }
         }
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay 1 second sebelum membaca lagi
+        if (!found) {
+            Serial.println("Card not registered!");
+
+            // Menampilkan pesan di LCD
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Access Denied!");
+
+            // Bunyikan buzzer (kartu tidak terdaftar)
+            buzzerBeep(2);
+            vTaskDelay(3000 / portTICK_PERIOD_MS);
+        }
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
 void setup() {
     Serial.begin(115200);
+    pinMode(BUZZER_PIN, OUTPUT);
+    servo1.attach(SERVO_PIN);
+
     SPI.begin();
     mfrc522.PCD_Init();
     mfrc522.PCD_DumpVersionToSerial();
 
     Wire.begin(26, 27); // SDA = 26, SCL = 27
-
-    // Inisialisasi LCD
     lcd.begin();
     lcd.backlight();
-    
+
     WiFi.begin(ssid, password);
     Serial.printf("Connecting to WiFi with SSID : %s\n", ssid);
     while (!WiFi.isConnected());
@@ -221,5 +274,5 @@ void setup() {
 }
 
 void loop() {
-    // Loop kosong karena tugas dijalankan sebagai task
+    // Kosong, tugas berjalan sebagai task
 }
