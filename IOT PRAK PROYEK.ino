@@ -1,15 +1,27 @@
+// #define BLYNK_TEMPLATE_ID "TMPL6HxEZ5GGi"
+// #define BLYNK_TEMPLATE_NAME "FinproIOT"
+// #define BLYNK_AUTH_TOKEN "Tg9T1j4TtzA3wprD9awXRjW3ix_Lvqai"
+
+
+#define BLYNK_TEMPLATE_ID "TMPL6LA2UCLob"
+#define BLYNK_TEMPLATE_NAME "FinproIOT8"
+#define BLYNK_AUTH_TOKEN "TFvadeQaJIuMbuLccqYBe1A6DX9a9F_E"
+
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
+#include <BlynkSimpleEsp32.h>
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 #include <SPI.h>
 #include <MFRC522.h>
+#include <Keypad.h>
 
 #define RST_PIN         22           // Configurable, see typical pin layout above
 #define SS_PIN          21           // Configurable, see typical pin layout above
@@ -29,35 +41,37 @@ TaskHandle_t httpTask;
 TaskHandle_t rfidTask;
 TaskHandle_t keypadTask;
 
-Konfigurasi Keypad 3x4 di-comment karena keypad sementara menggunakan blynk
-const byte ROWS = 4; // Jumlah baris pada keypad
-const byte COLS = 3; // Jumlah kolom pada keypad
+const char ssid[] = "GJ";
+const char password[] = "sumbawa8";
+const char auth[] = BLYNK_AUTH_TOKEN;
 
-char keys[ROWS][COLS] = {
-    {'1', '2', '3'},
-    {'4', '5', '6'},
-    {'7', '8', '9'},
-    {'*', '0', '#'}
-};
+// // Konfigurasi Keypad 3x4
+// const byte ROWS = 4; // Jumlah baris pada keypad
+// const byte COLS = 3; // Jumlah kolom pada keypad
 
-byte rowPins[ROWS] = {25, 33, 32, 35}; // Pin baris
-byte colPins[COLS] = {12, 14, 5};    // Pin kolom
+// char keys[ROWS][COLS] = {
+//     {'1', '2', '3'},
+//     {'4', '5', '6'},
+//     {'7', '8', '9'},
+//     {'*', '0', '#'}
+// };
 
-Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+// byte rowPins[ROWS] = {25, 33, 32, 35}; // Pin baris
+// byte colPins[COLS] = {12, 14, 5};    // Pin kolom
+
+// Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
 // Variabel untuk menangkap PIN
-String pin;
+// String pin;
 String enteredPin;
 bool pinEntered;
 String nama;
 String uid;
 String pinKaryawan;
-
-
-const char ssid[] = "Studio Room";
-const char password[] = "johncena12";
+int countKaryawan = 0;
 
 // Sertifikat SSL
+// openssl s_client -connect mocki.io:443 -showcerts
 const char *server_cert = R"(-----BEGIN CERTIFICATE-----
 MIIEdTCCA12gAwIBAgIJAKcOSkw0grd/MA0GCSqGSIb3DQEBCwUAMGgxCzAJBgNV
 BAYTAlVTMSUwIwYDVQQKExxTdGFyZmllbGQgVGVjaG5vbG9naWVzLCBJbmMuMTIw
@@ -85,56 +99,89 @@ l08YuW3e95ORCLp+QCztweq7dp4zBncdDQh/U90bZKuCJ/Fp1U1ervShw3WnWEQt
 VsyuLAOQ1xk4meTKCRlb/weWsKh/NEnfVqn3sF/tM+2MR7cwA130A4w=
 -----END CERTIFICATE-----)";
 
+
+// openssl req -newkey rsa:2048 -nodes -keyout client_key.pem -x509 -days 365 -out client_cert.pem
 const char *client_cert = R"(-----BEGIN CERTIFICATE-----
-MIIDazCCAlOgAwIBAgIUKKiAFOqVEulwkqj1poHRwfgm3howDQYJKoZIhvcNAQEL
+MIIDazCCAlOgAwIBAgIULFfEDbJUaYNZHkU3TDAxImmj9j8wDQYJKoZIhvcNAQEL
 BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
-GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNDEyMDYxNDM4NDVaFw0yNTEy
-MDYxNDM4NDVaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNDEyMDkwNDIwNTBaFw0yNTEy
+MDkwNDIwNTBaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
 HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB
-AQUAA4IBDwAwggEKAoIBAQDOOFUUud8dsFYjq0aTcD7geyljtzKvz/nbUFKn9fHv
-wMZvO6HOU8xLI/LJe6c/d57IXIGmtb2//ni5tL2TgDcmhwgDSvtFKA94OHzQjrcb
-So0AHxb0ds1xM+ND1xaDWfyn0Nj4qWBCghvioTyNTA/lgGPjmRStejohnUKBi4/O
-/05ui42nPHlLISZPF9MBctzlM3ESFGa/i2KQfWzC13x89poHhawV9PbWcx4OqwO5
-uvHXHxTFmLHKaEpP/MFGNU7rq3h8QeXGm4uCb/0O7oD4pDEaU/xV9NEGIp08XzBE
-rmk4i4oWrfPjfkt/a/lw+Tsh6NekK4lv9UJIqVAB2FFnAgMBAAGjUzBRMB0GA1Ud
-DgQWBBSW62qJkMthWor5raTxgsGKBRIc3DAfBgNVHSMEGDAWgBSW62qJkMthWor5
-raTxgsGKBRIc3DAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBp
-pNjbSjamj3nKdKdIcVcZIgXtFRB5NaVYA6ABiWmLoSSEvDUU47+ofKnSWRwABx+u
-72oJavXE7srnTXOyqD5RZUrz2Ca8AcUBiZ/CluIE2CJ/r5PXgMDK7hRpZ35pmmFC
-rE+RmRUlFPHQE6PoIFCllzod2H3ikW8MroEYjnaW9ivFC5tCv8vhAYp+aLcZmKBt
-YhilSGMTIWVLOmGYzoh6pgxH9dlCKMIE28kHwGj2zDUuPQVoQXVpikF6c7Ffh7yE
-Fim1kRjUXIO8eujnZa8aaTBqCBIBTshSquOlwlhEGHCj9rIJzne7YHDwNUIyGxNd
-+L8V0Jc0S2WbR8r9xQsU
+AQUAA4IBDwAwggEKAoIBAQCdgHOFK3fiNAVcmi2fOLuWdxshbIKo9Ib54s3Nt0ZV
+MkOkoq6LmwCnbMitIfmceHNNjonFbzpeXqJneRwm+sXpLPIbvne4qUs4C+duLDBJ
+cpcm/bJEe2E5uJpOVB4X9CBgfrvHtJqERQ0U8/hk4PBNz89bS30yM5a+zyoCkrWz
+Hsw66pdfk0nieghJF6A2CNRRn8iKwKAtql3kXVLkGdKwzTZ0pUht2kM2BYTvVgf+
+GZcKpPzfykYQEibeaoltvCakhyATvsLxgdKPVGqtdXqZfg0O4BkrULxO4XLwKp8w
+qV9PkvY9u2z/wxs0qgUTjYeRvt1ncpbzmLzEx1xOpYMhAgMBAAGjUzBRMB0GA1Ud
+DgQWBBQzqfuFgHXwHH9TS7lg7hm+4U76eDAfBgNVHSMEGDAWgBQzqfuFgHXwHH9T
+S7lg7hm+4U76eDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQA7
+uIsUPvvqX3Ki4JWXMRuSKhoHGjH4TwXMxNrgJM1CYnxkbpMNo7yb+DgUKSLZnj4A
+KpKruSnF0A64WRtXvXs0ayXBazJx1TgXkiDC9HxdjYEHZzMO+JIhF9ce1QrtsgVI
+/RK4aqrzI0K3mFRT+enZa27viXY2sysdCv0KseuMSJIP4qxAOYHLraLtEtvtI8zm
+x4VbmxjeNdOLixqD4Kl0xY/OhJbUBeT1VyRgtk6H7BpbCaVStIyKCjrpXzd2kgrr
+MroVaf9SeXDQIL/YBvepu6knRjlWFORfAFBW9NEdItmnY/J7loQ2qCxpIrN4ZWk/
+5vBkUYnTxy52wKYSCYnI
 -----END CERTIFICATE-----)";
 
 const char *client_key = R"(-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDOOFUUud8dsFYj
-q0aTcD7geyljtzKvz/nbUFKn9fHvwMZvO6HOU8xLI/LJe6c/d57IXIGmtb2//ni5
-tL2TgDcmhwgDSvtFKA94OHzQjrcbSo0AHxb0ds1xM+ND1xaDWfyn0Nj4qWBCghvi
-oTyNTA/lgGPjmRStejohnUKBi4/O/05ui42nPHlLISZPF9MBctzlM3ESFGa/i2KQ
-fWzC13x89poHhawV9PbWcx4OqwO5uvHXHxTFmLHKaEpP/MFGNU7rq3h8QeXGm4uC
-b/0O7oD4pDEaU/xV9NEGIp08XzBErmk4i4oWrfPjfkt/a/lw+Tsh6NekK4lv9UJI
-qVAB2FFnAgMBAAECggEAMUV3WpjgbL0Fj8cr+S0/8K2soXUTiLs11Qc3gIb8c87I
-+qmyStRtwuRHbYl8V+cySmgD2DujJxzbZm9/Ph9LzgpESVkgeRENxSkl9USsDjq9
-PrKu7uD1zB7cJYjeCas1+Timpp79b1ab6AWjLJVoVOrcsvQP4zUJb5+d1MruJMQg
-R1+CuqYGzrBLlerJx9H4vvMrXpa/4KA+00rnS3ye1uyF2+X588La71SYptegpbVw
-ISXTdATrGCuj3uVkD5kkC15PXafzzQs5IWdM8/8qxWFBDb+hDvxeAcSCrJkJgODt
-VilCrHk+dKN1hTtNg3ntOf55xgsKDF+6YVXxesveYQKBgQD1Orwnesq+IAtvw7gN
-+iA2ODyPga3+kAoXV0JOwBAs1DQIzPfZa9r24xdoypethgNpagVTKVCcjBijlR/F
-kMKHjyXVl477g6GtoKAaqqTEOqTcaRIkhpal2/8YyxOOkw3EZDxhruSM9AH0YFZc
-GJjbE3ff8tPiFmc9a9GkyE9mBwKBgQDXRv2sUwgiTVek1cWlFtNhsUpBaemj+cfI
-evuPLAD6DBcekyjpVik5xADEcFHD7j+0uOUis4P5ugcozTPUXX7yvkIm9fEbcHdy
-xRaL/anp6/ZIY8jjcteZvQ7rK14WgirrdJF0nLnY47tx1R3Tco9uro0oLNycKybk
-02uQf5vhoQKBgQCzSW/KRWH4wqDZ43Oq9FWcjlzoZlz5IgHesrMNtCmfPL2WOZRy
-5wG9QqYYvRVLjhDsftDJzgjbiylwX1RNMtqmFSgKErY8eC46LJchJ+UyedWSN1dG
-UQfO1xqX29C+ihCkpsvmduEtlC/hpJU+29TVRlR77KKwRsTQCQXKvZAe/QKBgEmY
-rn6sQDqh4FWs843V+NwMJUuprsNtUDyctsWikI7rdTfxrWngF+X0uSJvF7T5DXR2
-RXeQkYzdaTcsuAxhDlZkbu8s44my8FMfR+8CAIXFMoRbAMGpcEXR2XjSca8WPyAR
-0Oxh7DNW360x46l3H8wCBqX2eFE3e2t9T+etiJghAoGBALiLUmjpssA7tXY3yjfI
-m45dvPn0iSUplrD1sXhzTieqMbw89wanl79ZdUrCmxF0ept9+4rqCAwWEOqacExJ
-bNDgNSkEzdjLpG0TQaocVAfXqd5ZCs3wPh/KtjQJzc8Pn3Cilif3dhxSahquAtCz
-fAf7reVO5lc7EqoYUK380J/A
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCdgHOFK3fiNAVc
+mi2fOLuWdxshbIKo9Ib54s3Nt0ZVMkOkoq6LmwCnbMitIfmceHNNjonFbzpeXqJn
+eRwm+sXpLPIbvne4qUs4C+duLDBJcpcm/bJEe2E5uJpOVB4X9CBgfrvHtJqERQ0U
+8/hk4PBNz89bS30yM5a+zyoCkrWzHsw66pdfk0nieghJF6A2CNRRn8iKwKAtql3k
+XVLkGdKwzTZ0pUht2kM2BYTvVgf+GZcKpPzfykYQEibeaoltvCakhyATvsLxgdKP
+VGqtdXqZfg0O4BkrULxO4XLwKp8wqV9PkvY9u2z/wxs0qgUTjYeRvt1ncpbzmLzE
+x1xOpYMhAgMBAAECggEABAiDTMx3ajM/VOb81pg3E4wSxYkYEngKkdEZSJSSKEHc
+ghWJZzlNq7vpKqfVUsix2TFWfVgTFFITkhdDnYrr8QPt4kB/I9sv+iwx3bwjc2oM
+DVtPSponO/lqeCmGyMG/Z4EvUVaiY1M6WchCmuC4vqFc879L4jJ4gIPhFUZJAWB0
+8Wn5Tyb6Ovx0YOlv3r8CWVGnRDYjuvZnZq6k8WEuLBzm4lD5HljOoLILzD0MVbwd
+o2XylclGk4YNfD9Viz/YPZZd4L6X8EXzALwqNQlB+ZZeKZtlSXonL1UdL1kK+J8z
+QoenNwEQ7p7kMSL+0XGEOVFpgByYBAXgn4OS4xN4zQKBgQDcrvSJdT3Z1KQVhIHB
+7LyJuAqUTyL4s1P8oxJ6TmIJQWq4ivq3/YseQqlL9DMnYRvQUxmRmNli3S8WtanB
+917Yxgink7YDh9PYyxnK2BhqdQGdh9iVBetTGzVWybrLjcPSZCom78rLZv5GvVN2
+piwcdV3eTcXfzbXti/gGErP8ZQKBgQC2tQuRCtGzBkuAOxlQjIKeheejiAO2Vb7a
+NL0xlpODONclrF32BQI64LlPoL3ig9RrTiojqYDA6G2HoN4ZP8WuXGY438HdcgKX
+2JFGmuhx1G04RhOfAzK+NPYglGIgL6oxPwO2/Q0NL2QIqyxPSPyj60dId+RL+I9P
+S7HfplLKDQKBgFeub9yZp5x//z3JayDY5cQ2SoXIt5Vm8uzDAhl0QUF6K2PtXFZ0
+N60rQUa7XQO9cqagDd2qhFziks4MGcnGdnncnR2v87aNZh+R+sp8d578pEqp6eSz
++F8JxXSZLE2qIu7Z+2GDDukoH8mNebb/qTEZdNVZw0/71NfwL/iBv999AoGAFZeF
+u2lc6NxIlenmDvfcA+HtQw0y6xxtBpqO9UpHOo3AF0qsfAORhOXD4J4tcpSDyP6e
+ykIg3itZrlqbhL5dnUJ8LiJ7ZbEwj0Nfv8lUyQcCtVDKxtL47zORFr6Sbh1T7qf0
+x25WWYWNO90GyoPkn3aRoQXSLAw+228loTmltQ0CgYAHuxFvzsmBbjaZP3Id5iNN
+lkNITZPExHAyWXrACUfAqF8Z5ZTpHqz13LlM9PRIBVItnIyh/RIzWTInZu86+iXg
+VkQ3eykBMU6UuJfdtfz5l64Y5NHvG97FuFS6NEj6ZSWNBoD1rDy/Is1UIQe+AXcz
+JDRzfKL6LqaZvPIpoSSWgQ==
 -----END PRIVATE KEY-----)";
+
+// Mutex untuk melindungi buffer PIN
+SemaphoreHandle_t xMutex;
+
+// Fungsi untuk menangani input dari tombol angka (1 - 9)
+BLYNK_WRITE(V100) { handleKeypadInput(0, param.asInt()); }
+BLYNK_WRITE(V101) { handleKeypadInput(1, param.asInt()); }
+BLYNK_WRITE(V102) { handleKeypadInput(2, param.asInt()); }
+BLYNK_WRITE(V103) { handleKeypadInput(3, param.asInt()); }
+BLYNK_WRITE(V104) { handleKeypadInput(4, param.asInt()); }
+BLYNK_WRITE(V105) { handleKeypadInput(5, param.asInt()); }
+BLYNK_WRITE(V106) { handleKeypadInput(6, param.asInt()); }
+BLYNK_WRITE(V107) { handleKeypadInput(7, param.asInt()); }
+BLYNK_WRITE(V108) { handleKeypadInput(8, param.asInt()); }
+BLYNK_WRITE(V109) { handleKeypadInput(9, param.asInt()); }
+
+// Fungsi untuk menangani tombol ENTER
+BLYNK_WRITE(V110) {
+  if (param.asInt() == 1) { // Saat tombol ENTER ditekan
+    pinEntered = true;
+    Blynk.virtualWrite(V111, "0");
+    keypadHandle(); 
+  }
+}
+
+BLYNK_WRITE(V1) {
+  if (param.asInt() == 1) { // Saat tombol ENTER ditekan
+    countKaryawan = 0;
+    Blynk.virtualWrite(V0, countKaryawan);    
+  }
+}
 
 void buzzerBeep(int pattern) {
     if (pattern == 1) { // Irama 1 untuk kartu terdaftar
@@ -154,60 +201,60 @@ void buzzerBeep(int pattern) {
     }
 }
 
-void keypadHandle(void *parameter) {
-    pin = ""; // Pastikan PIN kosong saat task dimulai
-    lcd.clear();
-    Serial.println(pinKaryawan);
+// void keypadHandle(void *parameter) {
+//     pin = ""; // Pastikan PIN kosong saat task dimulai
+//     lcd.clear();
+//     Serial.println(pinKaryawan);
 
-    for (;;) { // Loop tak terbatas agar terus membaca keypad
-        char key = keypad.getKey(); // Baca tombol dari keypad
+//     for (;;) { // Loop tak terbatas agar terus membaca keypad
+//         char key = keypad.getKey(); // Baca tombol dari keypad
 
-        if (key) { // Jika ada tombol yang ditekan
-            if (key == '#') { // Jika tombol '#' ditekan, konfirmasi PIN
-                Serial.printf("PIN Entered: %s\n", pin.c_str());
+//         if (key) { // Jika ada tombol yang ditekan
+//             if (key == '#') { // Jika tombol '#' ditekan, konfirmasi PIN
+//                 Serial.printf("PIN Entered: %s\n", pin.c_str());
                 
-                if (strcmp(pin.c_str(), pinKaryawan) == 0) { // Validasi PIN
-                    Serial.println("PIN Benar!");
+//                 if (strcmp(pin.c_str(), pinKaryawan) == 0) { // Validasi PIN
+//                     Serial.println("PIN Benar!");
 
-                    // Menampilkan pesan di LCD
-                    lcd.clear();
-                    lcd.setCursor(0, 0);
-                    lcd.print("Welcome !!!");
-                    lcd.setCursor(0, 1);
-                    lcd.print(nama);
+//                     // Menampilkan pesan di LCD
+//                     lcd.clear();
+//                     lcd.setCursor(0, 0);
+//                     lcd.print("Welcome !!!");
+//                     lcd.setCursor(0, 1);
+//                     lcd.print(nama);
 
-                    // Aksi servo dan buzzer
-                    servo1.write(90); // Buka servo
-                    buzzerBeep(1);    // Bunyikan buzzer
-                    vTaskDelay(3000 / portTICK_PERIOD_MS); // Delay 3 detik
-                    servo1.write(180); // Tutup servo
+//                     // Aksi servo dan buzzer
+//                     servo1.write(90); // Buka servo
+//                     buzzerBeep(1);    // Bunyikan buzzer
+//                     vTaskDelay(3000 / portTICK_PERIOD_MS); // Delay 3 detik
+//                     servo1.write(180); // Tutup servo
 
-                } else { // Jika PIN salah
-                    Serial.println("Invalid PIN");
-                    lcd.clear();
-                    lcd.setCursor(0, 0);
-                    lcd.print("Invalid PIN");
-                    vTaskDelay(2000 / portTICK_PERIOD_MS); // Tampilkan pesan selama 2 detik
-                }
-                pin = ""; // Reset PIN setelah validasi
-            } 
-            else if (key == '*') { // Tombol '*' untuk reset PIN
-                char abah;
-            }
-            else { // Tambahkan angka ke PIN
-                pin += key; // Tambahkan angka yang ditekan ke variabel PIN
-                Serial.printf("Current PIN: %s\n", pin.c_str());
+//                 } else { // Jika PIN salah
+//                     Serial.println("Invalid PIN");
+//                     lcd.clear();
+//                     lcd.setCursor(0, 0);
+//                     lcd.print("Invalid PIN");
+//                     vTaskDelay(2000 / portTICK_PERIOD_MS); // Tampilkan pesan selama 2 detik
+//                 }
+//                 pin = ""; // Reset PIN setelah validasi
+//             } 
+//             else if (key == '*') { // Tombol '*' untuk reset PIN
+//                 char abah;
+//             }
+//             else { // Tambahkan angka ke PIN
+//                 pin += key; // Tambahkan angka yang ditekan ke variabel PIN
+//                 Serial.printf("Current PIN: %s\n", pin.c_str());
                 
-                // Tampilkan PIN di LCD
-                lcd.setCursor(0, 0);
-                lcd.print("PIN : ");
-                lcd.setCursor(0, 1);
-                lcd.print(pin.c_str());
-            }
-        }
-        vTaskDelay(50 / portTICK_PERIOD_MS); // Delay tambahan untuk efisiensi CPU
-    }
-}
+//                 // Tampilkan PIN di LCD
+//                 lcd.setCursor(0, 0);
+//                 lcd.print("PIN : ");
+//                 lcd.setCursor(0, 1);
+//                 lcd.print(pin.c_str());
+//             }
+//         }
+//         vTaskDelay(50 / portTICK_PERIOD_MS); // Delay tambahan untuk efisiensi CPU
+//     }
+// }
 
 
 void keypadHandle() {
@@ -244,6 +291,29 @@ void keypadHandle() {
     }
 }
 
+
+void handleKeypadInput(int value, int state) {
+    if (state == 1) { // Tombol ditekan
+        if (xSemaphoreTake(xMutex, portMAX_DELAY)) {
+            if (enteredPin.length() < 4) {
+                enteredPin += String(value); // Tambahkan angka ke buffer PIN
+                Serial.print("Entered PIN: ");
+                Serial.println(enteredPin);
+                Blynk.virtualWrite(V111, enteredPin);
+
+                
+                lcd.setCursor(enteredPin.length() - 1, 1);
+                lcd.print("*"); // Gunakan '*' untuk menyembunyikan angka
+
+            } else {
+                Serial.println("PIN sudah mencapai 4 digit.");
+            }
+            xSemaphoreGive(xMutex); // Lepaskan mutex
+        }
+    }
+}
+
+
 void httpHandle(void *parameter) {
     for (;;) {
         WiFiClientSecure *client = new WiFiClientSecure;
@@ -253,7 +323,7 @@ void httpHandle(void *parameter) {
             client->setPrivateKey(client_key);
 
             HTTPClient https;
-            if (https.begin(*client, "https://mocki.io/v1/84130b2e-0aee-4572-9674-360cc7f0f700")) {
+            if (https.begin(*client, "https://mocki.io/v1/b600eba7-777a-4bee-86cd-57efc2f3f9af")) {
                 int httpCode = https.GET();
 
                 if (httpCode > 0) {
@@ -275,7 +345,6 @@ void httpHandle(void *parameter) {
         } else {
             Serial.println("Unable to create client");
         }
-        vTaskDelay(5000 / portTICK_PERIOD_MS); // Delay 5 seconds
     }
 }
 
@@ -313,14 +382,14 @@ void rfidHandle(void *parameter) {
             uid = obj["uid"].as<String>();    // Mengambil nilai "uid" dan menyimpannya sebagai String
             pinKaryawan = obj["pin"].as<String>();  // Mengambil nilai "pin" dan menyimpannya sebagai String
 
-
             if (UID == uid) {
                 found = true;
-
+                countKaryawan++;
+                Blynk.virtualWrite(V0, countKaryawan);
                 lcd.clear();
                 lcd.print("Enter PIN: ");
-                
-                xTaskCreate(keypadHandle, "Keypad Task", 4096, NULL, 1, &keypadTask);
+
+                //xTaskCreate(keypadHandle, "Keypad Task", 4096, NULL, 1, &keypadTask);
                 break;
             }
         }
@@ -342,6 +411,14 @@ void rfidHandle(void *parameter) {
     }
 }
 
+
+void blynkHandle(void *parameter) {
+  for(;;){
+    Blynk.run();
+    vTaskDelay(300 / portTICK_PERIOD_MS); // Kurangi CPU usage
+  }
+}  
+
 void setup() {
     Serial.begin(115200);
     pinMode(BUZZER_PIN, OUTPUT);
@@ -351,6 +428,13 @@ void setup() {
     mfrc522.PCD_Init();
     mfrc522.PCD_DumpVersionToSerial();
 
+    // Inisialisasi Mutex
+    xMutex = xSemaphoreCreateMutex();
+    if (xMutex == NULL) {
+      Serial.println("Mutex gagal dibuat!");
+      while (1);
+    }
+
     Wire.begin(26, 27); // SDA = 26, SCL = 27
     lcd.begin();
     lcd.backlight();
@@ -358,12 +442,19 @@ void setup() {
     WiFi.begin(ssid, password);
     Serial.printf("Connecting to WiFi with SSID : %s\n", ssid);
     while (!WiFi.isConnected());
-    Serial.println("Connection successful");
+    Serial.println("Wifi Connected");
     lcd.print("Wifi Connected");
 
+    Blynk.begin(auth, ssid, password);
+    while (WiFi.status() != WL_CONNECTED);
+    Serial.println("Blynk Connected");
+    lcd.clear();
+    lcd.print("Blynk Connected");
+
     // Create tasks
-    xTaskCreate(httpHandle, "HTTP Task", 8192, NULL, 1, &httpTask);
-    xTaskCreate(rfidHandle, "RFID Task", 4096, NULL, 1, &rfidTask);
+    xTaskCreate(httpHandle, "HTTP Task", 8192, NULL, 15, &httpTask);
+    xTaskCreate(rfidHandle, "RFID Task", 4096, NULL, 10, &rfidTask);
+    xTaskCreate(blynkHandle, "Blynk Task", 4096, NULL, 5, NULL);
 }
 
 void loop() {
