@@ -29,6 +29,31 @@ TaskHandle_t httpTask;
 TaskHandle_t rfidTask;
 TaskHandle_t keypadTask;
 
+Konfigurasi Keypad 3x4 di-comment karena keypad sementara menggunakan blynk
+const byte ROWS = 4; // Jumlah baris pada keypad
+const byte COLS = 3; // Jumlah kolom pada keypad
+
+char keys[ROWS][COLS] = {
+    {'1', '2', '3'},
+    {'4', '5', '6'},
+    {'7', '8', '9'},
+    {'*', '0', '#'}
+};
+
+byte rowPins[ROWS] = {25, 33, 32, 35}; // Pin baris
+byte colPins[COLS] = {12, 14, 5};    // Pin kolom
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+// Variabel untuk menangkap PIN
+String pin;
+String enteredPin;
+bool pinEntered;
+String nama;
+String uid;
+String pinKaryawan;
+
+
 const char ssid[] = "Studio Room";
 const char password[] = "johncena12";
 
@@ -130,9 +155,92 @@ void buzzerBeep(int pattern) {
 }
 
 void keypadHandle(void *parameter) {
-    for (;;) {
-      Serial.println("WOI BAH");
-      vTaskDelete(NULL);
+    pin = ""; // Pastikan PIN kosong saat task dimulai
+    lcd.clear();
+    Serial.println(pinKaryawan);
+
+    for (;;) { // Loop tak terbatas agar terus membaca keypad
+        char key = keypad.getKey(); // Baca tombol dari keypad
+
+        if (key) { // Jika ada tombol yang ditekan
+            if (key == '#') { // Jika tombol '#' ditekan, konfirmasi PIN
+                Serial.printf("PIN Entered: %s\n", pin.c_str());
+                
+                if (strcmp(pin.c_str(), pinKaryawan) == 0) { // Validasi PIN
+                    Serial.println("PIN Benar!");
+
+                    // Menampilkan pesan di LCD
+                    lcd.clear();
+                    lcd.setCursor(0, 0);
+                    lcd.print("Welcome !!!");
+                    lcd.setCursor(0, 1);
+                    lcd.print(nama);
+
+                    // Aksi servo dan buzzer
+                    servo1.write(90); // Buka servo
+                    buzzerBeep(1);    // Bunyikan buzzer
+                    vTaskDelay(3000 / portTICK_PERIOD_MS); // Delay 3 detik
+                    servo1.write(180); // Tutup servo
+
+                } else { // Jika PIN salah
+                    Serial.println("Invalid PIN");
+                    lcd.clear();
+                    lcd.setCursor(0, 0);
+                    lcd.print("Invalid PIN");
+                    vTaskDelay(2000 / portTICK_PERIOD_MS); // Tampilkan pesan selama 2 detik
+                }
+                pin = ""; // Reset PIN setelah validasi
+            } 
+            else if (key == '*') { // Tombol '*' untuk reset PIN
+                char abah;
+            }
+            else { // Tambahkan angka ke PIN
+                pin += key; // Tambahkan angka yang ditekan ke variabel PIN
+                Serial.printf("Current PIN: %s\n", pin.c_str());
+                
+                // Tampilkan PIN di LCD
+                lcd.setCursor(0, 0);
+                lcd.print("PIN : ");
+                lcd.setCursor(0, 1);
+                lcd.print(pin.c_str());
+            }
+        }
+        vTaskDelay(50 / portTICK_PERIOD_MS); // Delay tambahan untuk efisiensi CPU
+    }
+}
+
+
+void keypadHandle() {
+    if (pinEntered) {
+            Serial.println("Checking PIN...");
+            Serial.println(pinKaryawan);
+            Serial.println(enteredPin);
+            if (enteredPin == pinKaryawan) { // Bandingkan dengan PIN yang benar
+                Serial.println("PIN Correct! Access Granted.");
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Access Granted!");
+
+                buzzerBeep(1); // Bunyikan buzzer sebagai alarm
+
+                // Servo membuka pintu
+                servo1.write(90); 
+                delay(2000); 
+                servo1.write(0); // Kembali ke posisi awal
+            } else {
+                Serial.println("Incorrect PIN! Try Again.");
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Incorrect PIN!");
+                buzzerBeep(2); // Bunyikan buzzer sebagai alarm
+            }
+
+            // Reset buffer PIN
+            enteredPin = "";
+            pinEntered = false;
+            lcd.clear();
+            lcd.print("Enter PIN: ");
+        
     }
 }
 
@@ -200,33 +308,18 @@ void rfidHandle(void *parameter) {
 
         bool found = false;
         // Mencari nama berdasarkan UID dari JSON
-        for (JsonObject obj : doc.as<JsonArray>()) {
-            const char *nama = obj["nama"];
-            const char *uid = obj["uid"];
+        for (JsonObject obj : doc.as<JsonArray>()) {       
+            nama = obj["nama"].as<String>();  // Mengambil nilai "nama" dan menyimpannya sebagai String
+            uid = obj["uid"].as<String>();    // Mengambil nilai "uid" dan menyimpannya sebagai String
+            pinKaryawan = obj["pin"].as<String>();  // Mengambil nilai "pin" dan menyimpannya sebagai String
 
-            if (strcmp(UID.c_str(), uid) == 0) {
+
+            if (UID == uid) {
                 found = true;
 
-                Serial.printf("Welcome to Office %s !!!\n", nama);
-                Serial.println("PIN : ");
-
-                // Menampilkan pesan di LCD
                 lcd.clear();
-                lcd.setCursor(0, 0);
-                lcd.print("Welcome !!!");
-                lcd.setCursor(0, 1);
-                lcd.print(nama);
-
-                servo1.write(90);
-                // Bunyikan buzzer (kartu terdaftar)
-                buzzerBeep(1);
-
-                vTaskDelay(3000 / portTICK_PERIOD_MS);
-                servo1.write(180);
-
-                lcd.clear();
-                lcd.setCursor(0, 0);
-                lcd.print("PIN :");
+                lcd.print("Enter PIN: ");
+                
                 xTaskCreate(keypadHandle, "Keypad Task", 4096, NULL, 1, &keypadTask);
                 break;
             }
@@ -240,9 +333,9 @@ void rfidHandle(void *parameter) {
             lcd.setCursor(0, 0);
             lcd.print("Access Denied!");
 
-            // Bunyikan buzzer (kartu tidak terdaftar)
+            // Bunyikan buzzer berirama (kartu tidak terdaftar)
             buzzerBeep(2);
-            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            continue;
         }
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
