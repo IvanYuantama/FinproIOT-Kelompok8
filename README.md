@@ -53,7 +53,12 @@ Hasil evaluasi menunjukkan bahwa sistem dapat diandalkan dalam mendukung manajem
 ---
 
 ## Final Product
-Sistem ini siap diimplementasikan di kantor atau lingkungan kerja lainnya untuk mempermudah pengelolaan kehadiran dan akses locker.
+![alt text](https://i.imgur.com/URp8pHk.png)
+
+
+![alt text](https://i.imgur.com/mnq6vew.png)
+
+![alt text](https://i.imgur.com/5h2Dn9j.png)
 
 ---
 
